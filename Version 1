@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Playlist Growth Graph</title>
+    <!-- We use Chart.js for graphing. It's free and easy. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            margin: 0;
+        }
+        .container {
+            background-color: #282828;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 800px;
+            text-align: center;
+        }
+        h1 {
+            color: #1DB954; /* Spotify Green */
+        }
+        button {
+            background-color: #1DB954;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 500px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background-color: #1ED760;
+        }
+        button:disabled {
+            background-color: #535353;
+            cursor: not-allowed;
+        }
+        input[type="text"] {
+            width: calc(100% - 24px);
+            padding: 12px;
+            margin: 1rem 0;
+            border-radius: 5px;
+            border: 1px solid #535353;
+            background-color: #333;
+            color: white;
+            font-size: 16px;
+        }
+        #status {
+            margin-top: 1.5rem;
+            min-height: 24px;
+            font-style: italic;
+            color: #b3b3b3;
+        }
+        #chart-container {
+            margin-top: 2rem;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Spotify Playlist Growth Analyzer</h1>
+
+        <!-- Step 1: Authorization -->
+        <div id="login-section">
+            <p>To begin, you need to authorize this page to read your playlist data.</p>
+            <button id="login-btn">Authorize with Spotify</button>
+        </div>
+
+        <!-- Step 2: Input and Generate -->
+        <div id="app-section" class="hidden">
+            <p>Authorization successful! ✅</p>
+            <label for="playlist-input">Paste your Spotify Playlist Link (URL) or URI:</label>
+            <input type="text" id="playlist-input" placeholder="e.g., https://open.spotify.com/playlist/...">
+            <button id="generate-btn">Generate Growth Graph</button>
+        </div>
+
+        <div id="status"></div>
+
+        <div id="chart-container">
+            <canvas id="growthChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // IMPORTANT: Paste your Client ID here!
+        const CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; 
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
+        const SCOPES = 'playlist-read-private playlist-read-collaborative';
+
+        const loginBtn = document.getElementById('login-btn');
+        const generateBtn = document.getElementById('generate-btn');
+        const playlistInput = document.getElementById('playlist-input');
+        const loginSection = document.getElementById('login-section');
+        const appSection = document.getElementById('app-section');
+        const statusEl = document.getElementById('status');
+        const chartCanvas = document.getElementById('growthChart');
+        
+        let accessToken = '';
+        let growthChart = null;
+
+        // On page load, check if we're coming back from Spotify's login
+        window.onload = () => {
+            if(CLIENT_ID === 'YOUR_CLIENT_ID_HERE') {
+                statusEl.innerHTML = `<strong>Error:</strong> You need to edit the HTML file and add your Spotify Client ID.`;
+                loginBtn.disabled = true;
+                return;
+            }
+            
+            const hash = window.location.hash;
+            if (hash) {
+                const params = new URLSearchParams(hash.substring(1)); // Remove the '#'
+                const token = params.get('access_token');
+                if (token) {
+                    accessToken = token;
+                    showApp();
+                    // Clean the URL
+                    window.history.pushState("", document.title, window.location.pathname + window.location.search);
+                }
+            }
+        };
+
+        const showApp = () => {
+            loginSection.classList.add('hidden');
+            appSection.classList.remove('hidden');
+        };
+
+        loginBtn.addEventListener('click', () => {
+            const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
+            window.location = authUrl;
+        });
+
+        generateBtn.addEventListener('click', () => {
+            const playlistValue = playlistInput.value;
+            if (!playlistValue) {
+                alert('Please paste a playlist link or URI.');
+                return;
+            }
+            const playlistId = extractPlaylistId(playlistValue);
+            if (!playlistId) {
+                alert('Could not find a valid Playlist ID in the link. Please check it and try again.');
+                return;
+            }
+            fetchAndDrawGraph(playlistId);
+        });
+        
+        // --- IMPROVED FUNCTION START ---
+        // This function is now more robust at extracting the ID from various link formats.
+        function extractPlaylistId(input) {
+            try {
+                // First, try to match a URI like "spotify:playlist:12345"
+                const uriMatch = input.match(/spotify:playlist:([a-zA-Z0-9]+)/);
+                if (uriMatch && uriMatch[1]) {
+                    return uriMatch[1];
+                }
+
+                // If not a URI, treat it as a URL
+                // This will correctly handle URLs with or without "www.", "open.", and extra query parameters like "?si=..."
+                const url = new URL(input);
+                if (url.hostname.includes('spotify.com') && url.pathname.includes('/playlist/')) {
+                    const pathParts = url.pathname.split('/');
+                    // The ID is the last part of the path, e.g., /playlist/ID -> ["", "playlist", "ID"]
+                    return pathParts[pathParts.length - 1];
+                }
+            } catch (error) {
+                // This will catch errors if the input is not a valid URL, which is fine.
+                // We'll return null at the end.
+            }
+            return null; // Return null if no ID could be found
+        }
+        // --- IMPROVED FUNCTION END ---
+
+        async function fetchAllPlaylistTracks(playlistId) {
+            let tracks = [];
+            let nextUrl = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?fields=items(added_at,track(name)),next,total`;
+
+            let page = 1;
+            let total = 0;
+
+            while (nextUrl) {
+                try {
+                    const response = await fetch(nextUrl, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        if(response.status === 401) throw new Error("Authorization token expired. Please re-authorize by refreshing the page.");
+                        if(response.status === 404) throw new Error("Playlist not found. Check the link or make sure it's not private.");
+                        throw new Error(`API Error: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    if(page === 1) total = data.total;
+
+                    statusEl.textContent = `Fetching tracks... Page ${page} (found ${tracks.length + data.items.length} of ${total})`;
+                    
+                    tracks = tracks.concat(data.items.filter(item => item.track)); // Filter out null tracks
+                    nextUrl = data.next;
+                    page++;
+
+                } catch (error) {
+                    throw error; // Propagate the error up
+                }
+            }
+            return tracks;
+        }
+
+        async function fetchAndDrawGraph(playlistId) {
+            generateBtn.disabled = true;
+            statusEl.textContent = 'Starting analysis...';
+            if (growthChart) {
+                growthChart.destroy();
+            }
+
+            try {
+                const allTracks = await fetchAllPlaylistTracks(playlistId);
+                
+                statusEl.textContent = 'Processing data...';
+                
+                // Sort tracks by the date they were added
+                allTracks.sort((a, b) => new Date(a.added_at) - new Date(b.added_at));
+
+                // Create the data points for the graph
+                const chartData = allTracks.map((item, index) => ({
+                    x: new Date(item.added_at),
+                    y: index + 1
+                }));
+                
+                // Add a starting point at 0 if the playlist isn't empty
+                if (chartData.length > 0) {
+                    const firstDate = chartData[0].x;
+                    chartData.unshift({ x: new Date(firstDate.getTime() - 1000), y: 0 }); // A second before the first song
+                }
+
+                renderChart(chartData);
+                statusEl.innerHTML = `<strong>Analysis Complete!</strong> Found ${allTracks.length} tracks.`;
+
+            } catch (error) {
+                statusEl.innerHTML = `<strong>Error:</strong> ${error.message}`;
+                alert(`An error occurred: ${error.message}`);
+            } finally {
+                generateBtn.disabled = false;
+            }
+        }
+
+        function renderChart(data) {
+            const ctx = chartCanvas.getContext('2d');
+            growthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Total Song Count',
+                        data: data,
+                        borderColor: '#1DB954',
+                        backgroundColor: 'rgba(29, 185, 84, 0.2)',
+                        fill: true,
+                        tension: 0.1, 
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        title: { display: true, text: 'Playlist Growth Over Time', color: '#ffffff', font: { size: 18 } },
+                        legend: { labels: { color: '#ffffff' } }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { unit: 'month', tooltipFormat: 'MMM d, yyyy' },
+                            title: { display: true, text: 'Date Added', color: '#b3b3b3' },
+                             ticks: { color: '#b3b3b3' },
+                             grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'Number of Songs', color: '#b3b3b3' },
+                             ticks: { color: '#b3b3b3' },
+                             grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
