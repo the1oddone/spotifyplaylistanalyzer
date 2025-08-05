@@ -228,25 +228,74 @@
                 generateBtn.disabled = false;
             }
         }
-        function renderChart(data) {
-            const ctx = chartCanvas.getContext('2d');
-            growthChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    datasets: [{
-                        label: 'Total Song Count', data: data, borderColor: '#1DB954', backgroundColor: 'rgba(29, 185, 84, 0.2)', fill: true, tension: 0.1, pointRadius: 0
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: true,
-                    plugins: { title: { display: true, text: 'Playlist Growth Over Time', color: '#ffffff', font: { size: 18 } }, legend: { labels: { color: '#ffffff' } } },
-                    scales: {
-                        x: { type: 'time', time: { unit: 'month', tooltipFormat: 'MMM d, yyyy' }, title: { display: true, text: 'Date Added', color: '#b3b3b3' }, ticks: { color: '#b3b3b3' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
-                        y: { beginAtZero: true, title: { display: true, text: 'Number of Songs', color: '#b3b3b3' }, ticks: { color: '#b3b3b3' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
-                    }
-                }
-            });
+        // REPLACE WITH THIS ENTIRE BLOCK:
+
+// --- NEW FEATURE: Custom Plugin for Vertical Line ---
+const verticalLinePlugin = {
+    id: 'verticalLine',
+    afterDraw: (chart) => {
+        const tooltip = chart.tooltip;
+        if (tooltip && tooltip.getActiveElements().length) {
+            const ctx = chart.ctx;
+            const activeElement = tooltip.getActiveElements()[0];
+            const x = activeElement.element.x;
+            const topY = chart.scales.y.top;
+            const bottomY = chart.scales.y.bottom;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x, topY);
+            ctx.lineTo(x, bottomY);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(179, 179, 179, 0.5)'; // A light gray, semi-transparent line
+            ctx.setLineDash([5, 5]); // Makes the line dotted
+            ctx.stroke();
+            ctx.restore();
         }
+    }
+};
+
+
+function renderChart(data) {
+    if (growthChart) {
+        growthChart.destroy();
+    }
+    const ctx = chartCanvas.getContext('2d');
+    growthChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Total Song Count', 
+                data: data, 
+                borderColor: '#1DB954', 
+                backgroundColor: 'rgba(29, 185, 84, 0.2)', 
+                fill: true, 
+                tension: 0.1, 
+                pointRadius: 0, 
+                pointHoverRadius: 5 // --- NEW: Show a dot on hover ---
+            }]
+        },
+        // --- NEW FEATURE: Register the custom plugin ---
+        plugins: [verticalLinePlugin],
+        options: {
+            // --- NEW FEATURE: Improved Tooltip Interaction ---
+            interaction: {
+                intersect: false, // Tooltip appears even if not directly over the line
+                mode: 'index',    // Finds items by their horizontal position
+            },
+            responsive: true, 
+            maintainAspectRatio: true,
+            plugins: { 
+                title: { display: true, text: 'Playlist Growth Over Time', color: '#ffffff', font: { size: 18 } }, 
+                legend: { labels: { color: '#ffffff' } } 
+            },
+            scales: {
+                x: { type: 'time', time: { unit: 'month', tooltipFormat: 'MMM d, yyyy' }, title: { display: true, text: 'Date Added', color: '#b3b3b3' }, ticks: { color: '#b3b3b3' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                y: { beginAtZero: true, title: { display: true, text: 'Number of Songs', color: '#b3b3b3' }, ticks: { color: '#b3b3b3' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } }
+            }
+        }
+    });
+}
     </script>
 </body>
 </html>
