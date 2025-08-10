@@ -200,7 +200,7 @@
                         label: 'Total Song Count', data: data, borderColor: '#1DB954', backgroundColor: 'rgba(29, 185, 84, 0.2)', fill: true, tension: 0.1, pointRadius: 0, pointHoverRadius: 5
                     }]
                 },
-                plugins: [verticalLinePlugin, ChartjsPluginZoom.default], // Register both plugins
+                plugins: [verticalLinePlugin, ChartjsPluginZoom],, // Register both plugins
                 options: {
                     interaction: { intersect: false, mode: 'index' },
                     responsive: true, maintainAspectRatio: true,
