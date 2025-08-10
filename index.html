@@ -105,6 +105,7 @@
                  showApp();
             }
         };
+        loginBtn.addEventListener('click', redirectToSpotifyAuthorize);
         async function redirectToSpotifyAuthorize() {
             const verifier = generateCodeVerifier(128);
             const challenge = await generateCodeChallenge(verifier);
